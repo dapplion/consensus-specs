@@ -137,6 +137,12 @@ class WhiskTracker(Container):
     k_r_G: BLSG1Point  # k * r * G
 ```
 
+```python
+class WhiskRegistration(Container):
+    index: ValidatorIndex
+    k_commitment: BLSG1Point
+```
+
 ### `BeaconState`
 
 ```python
@@ -187,6 +193,8 @@ class BeaconState(Container):
     whisk_proposer_trackers: Vector[WhiskTracker, WHISK_PROPOSER_TRACKERS_COUNT]  # [New in Whisk]
     whisk_trackers: List[WhiskTracker, VALIDATOR_REGISTRY_LIMIT]  # [New in Whisk]
     whisk_k_commitments: List[BLSG1Point, VALIDATOR_REGISTRY_LIMIT]  # [New in Whisk]
+    whisk_current_registrations: List[WhiskRegistration, WHISK_PROPOSER_TRACKERS_COUNT]
+    whisk_prev_registrations: List[WhiskRegistration, WHISK_PROPOSER_TRACKERS_COUNT]
 ```
 
 ```python
@@ -218,6 +226,11 @@ def process_whisk_updates(state: BeaconState) -> None:
     if next_epoch % WHISK_EPOCHS_PER_SHUFFLING_PHASE == 0:  # select trackers at the start of shuffling phases
         select_whisk_proposer_trackers(state, next_epoch)
         select_whisk_candidate_trackers(state, next_epoch)
+        # Apply pending whisk registrations after 2 shuffle rounds
+        for registration in state.whisk_prev_registrations:
+            state.whisk_k_commitments[registratation.index] = registration.k_commitment
+        state.whisk_prev_registrations = state.whisk_current_registrations
+        state.whisk_current_registrations = []
 ```
 
 ```python
@@ -355,8 +368,8 @@ def process_whisk(state: BeaconState, body: BeaconBlockBody) -> None:
     process_shuffled_trackers(state, body)
 
     # Overwrite all validator Whisk fields (first Whisk proposal) or just the permutation commitment (next proposals)
-    proposer = state.validators[get_beacon_proposer_index(state)]
-    if proposer.whisk_tracker.r_G == BLS_G1_GENERATOR:  # first Whisk proposal
+    index = get_beacon_proposer_index(state)
+    if state.whisk_trackers[index].r_G == BLS_G1_GENERATOR:  # first Whisk proposal
         assert body.whisk_tracker.r_G != BLS_G1_GENERATOR
         assert is_k_commitment_unique(state, body.whisk_k_commitment)
         assert IsValidWhiskOpeningProof(
@@ -364,8 +377,8 @@ def process_whisk(state: BeaconState, body: BeaconBlockBody) -> None:
             body.whisk_k_commitment,
             body.whisk_registration_proof,
         )
-        proposer.whisk_tracker = body.whisk_tracker
-        proposer.whisk_k_commitment = body.whisk_k_commitment
+        state.whisk_trackers[index] = body.whisk_tracker
+        state.whisk_current_registrations = WhiskRegistration(index, body.whisk_k_commitment)
     else:  # next Whisk proposals
         assert body.whisk_registration_proof == WhiskTrackerProof()
         assert body.whisk_tracker == WhiskTracker()
@@ -389,29 +402,8 @@ def process_block(state: BeaconState, block: BeaconBlock) -> None:
 ### Deposits
 
 ```python
-def get_initial_whisk_k(validator_index: ValidatorIndex, counter: int) -> BLSFieldElement:
-    # hash `validator_index || counter`
-    return BLSFieldElement(bytes_to_bls_field(hash(uint_to_bytes(validator_index) + uint_to_bytes(uint64(counter)))))
-```
-
-```python
-def get_unique_whisk_k(state: BeaconState, validator_index: ValidatorIndex) -> BLSFieldElement:
-    counter = 0
-    while True:
-        k = get_initial_whisk_k(validator_index, counter)
-        if is_k_commitment_unique(state, BLSG1ScalarMultiply(k, BLS_G1_GENERATOR)):
-            return k  # unique by trial and error
-        counter += 1
-```
-
-```python
-def get_k_commitment(k: BLSFieldElement) -> BLSG1Point:
-    return BLSG1ScalarMultiply(k, BLS_G1_GENERATOR)
-```
-
-```python
-def get_initial_tracker(k: BLSFieldElement) -> WhiskTracker:
-    return WhiskTracker(r_G=BLS_G1_GENERATOR, k_r_G=BLSG1ScalarMultiply(k, BLS_G1_GENERATOR))
+def get_initial_tracker(k_G: BLSPukey) -> WhiskTracker:
+    return WhiskTracker(r_G=BLS_G1_GENERATOR, k_r_G=pubkey)
 ```
 
 ```python
@@ -440,9 +432,8 @@ def apply_deposit(state: BeaconState,
             set_or_append_list(state.current_epoch_participation, index, ParticipationFlags(0b0000_0000))
             set_or_append_list(state.inactivity_scores, index, uint64(0))
             # [New in Whisk]
-            k = get_unique_whisk_k(state, ValidatorIndex(len(state.validators) - 1))
-            state.whisk_trackers.append(get_initial_tracker(k))
-            state.whisk_k_commitments.append(get_k_commitment(k))
+            state.whisk_trackers.append(get_initial_tracker(pubkey))
+            state.whisk_k_commitments.append(pubkey)
     else:
         # Increase balance by deposit amount
         index = ValidatorIndex(validator_pubkeys.index(pubkey))
