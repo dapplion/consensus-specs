@@ -1,3 +1,4 @@
+
 from lru import LRU
 from dataclasses import (
     dataclass,
@@ -1960,6 +1961,9 @@ def process_deposit(state: BeaconState, deposit: Deposit) -> None:
     # Deposits must be processed in order
     state.eth1_deposit_index += 1
 
+    if is_from_concentrated_validator(deposit.data.withdrawal_credentials):
+        return
+
     apply_deposit(
         state=state,
         pubkey=deposit.data.pubkey,
@@ -1967,6 +1971,15 @@ def process_deposit(state: BeaconState, deposit: Deposit) -> None:
         amount=deposit.data.amount,
         signature=deposit.data.signature,
     )
+
+
+def is_from_concentrated_validator(state, withdrawal_crendentials):
+    total_active_stake = get_total_active_state(state)
+    withdrawal_active_stake = 0
+    for validator in state.validators:
+        if is_active_validator(validator) and validator.withdrawal_credentials == withdrawal_credentials:
+            withdrawal_active_stake += validator.effective_balance
+    return MAX_CONCENTRATED_FACTOR * withdrawal_active_stake > total_active_stake
 
 
 def process_voluntary_exit(state: BeaconState, signed_voluntary_exit: SignedVoluntaryExit) -> None:
@@ -3754,6 +3767,16 @@ def get_expected_withdrawals(state: BeaconState) -> Sequence[Withdrawal]:
     withdrawal_index = state.next_withdrawal_index
     validator_index = state.next_withdrawal_validator_index
     withdrawals: List[Withdrawal] = []
+
+    for deposit in block:
+        if is_from_concentrated_address(deposit):
+            withdrawals.push(Withdrawal(
+                index=withdrawal_index
+                validator_index=MAX_FUTURE_EPOCH
+                address=deposit.withdrawal_credentials
+                amount=deposit.amount
+            ))
+
     consumed = 0
     for withdrawal in state.pending_partial_withdrawals:
         if withdrawal.withdrawable_epoch > epoch or len(withdrawals) == MAX_WITHDRAWALS_PER_PAYLOAD // 2:
@@ -4045,3 +4068,4 @@ assert FINALIZED_ROOT_INDEX == get_generalized_index(BeaconState, 'finalized_che
 assert CURRENT_SYNC_COMMITTEE_INDEX == get_generalized_index(BeaconState, 'current_sync_committee')
 assert NEXT_SYNC_COMMITTEE_INDEX == get_generalized_index(BeaconState, 'next_sync_committee')
 assert EXECUTION_PAYLOAD_INDEX == get_generalized_index(BeaconBlockBody, 'execution_payload')
+
