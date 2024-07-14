@@ -28,7 +28,7 @@
 
 ## Introduction
 
-This is the beacon chain specification to introduce attestation correlated penalties. Refers to [EIP-9999](https://github.com/ethereum/EIPs/pull/9999).
+This is the beacon chain specification to introduce attestation correlated penalties. Refers to [EIP-7716](https://github.com/ethereum/EIPs/blob/master/EIPS/eip-7716.md).
 
 *Note:* This specification is built upon [Electra](../../electra/beacon_chain.md) and is under active development.
 
