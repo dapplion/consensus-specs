@@ -38,7 +38,7 @@ This is the beacon chain specification to introduce attestation correlated penal
 | - | - |
 | `PENALTY_ADJUSTMENT_FACTOR` | `2**12` (= 4096) |
 | `MAX_PENALTY_FACTOR` | `2**2` (= 4) |
-| `PENALTY_RECOVERY_RATE` | `2**0` (= 1) |
+| `EXCESS_PENALTY_RECOVERY_RATE` | `2**0` (= 1) |
 
 ## Containers
 
@@ -162,11 +162,11 @@ def compute_penalty_factor(state: BeaconState, at_slot: Slot, flag_index: int):
         participating_balance = participating_balance_slot(state, slot, flag_index)
         penalty_factor = min(
             ((total_balance - participating_balance) * PENALTY_ADJUSTMENT_FACTOR)
-            // (net_excess_penalties * total_balance + 1),
+            // (max(self.net_excess_penalties, 0.5) * total_balance + 1),
             MAX_PENALTY_FACTOR
         )
-        net_excess_penalties = max(PENALTY_RECOVERY_RATE, 
-                                   net_excess_penalties + penalty_factor) - PENALTY_RECOVERY_RATE
+        net_excess_penalties = max(EXCESS_PENALTY_RECOVERY_RATE, 
+                                   net_excess_penalties + penalty_factor) - EXCESS_PENALTY_RECOVERY_RATE
     return penalty_factor, net_excess_penalties
 ```
 
