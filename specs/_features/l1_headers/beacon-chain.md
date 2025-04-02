@@ -227,7 +227,6 @@ def weigh_justification_and_finalization(state: BeaconState,
         # The justified block of `epoch` has a timestamp <= than `timestamp(start_slot(epoch))`
         # `state.upstream_justified_block_timestamp` is in the upstream chain's time
         # Any L2 block must point to an upstream block that has <= timestamp
-        # TODO: optimization: iterate in reverse and stop at the first match
         checkpoint_block_timestamp = compute_timestamp_at_slot(compute_start_slot_at_epoch(checkpoint.epoch))
         upstream_justified_block_timestamp = compute_upstream_timestamp_at_slot(
             compute_upstream_start_slot_at_epoch(state.upstream_justified_checkpoint.epoch)
