@@ -12,6 +12,7 @@ from .constants import (
     EIP7441,
     EIP7732,
     EIP7805,
+    L1HEADERS,
 )
 
 
@@ -27,6 +28,7 @@ PREVIOUS_FORK_OF = {
     EIP7441: CAPELLA,
     EIP7732: ELECTRA,
     EIP7805: ELECTRA,
+    L1HEADERS: ELECTRA,
 }
 
 ALL_FORKS = list(PREVIOUS_FORK_OF.keys())
