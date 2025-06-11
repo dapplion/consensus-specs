@@ -19,6 +19,7 @@
       - [BeaconBlocksByRoot v2](#beaconblocksbyroot-v2)
       - [BlobSidecarsByRange v1](#blobsidecarsbyrange-v1)
       - [BlobSidecarsByRoot v1](#blobsidecarsbyroot-v1)
+      - [BeaconBlockHeadersByRoot v1](#beaconblockheadersbyroot-v1)
 
 <!-- mdformat-toc end -->
 
@@ -213,3 +214,49 @@ Response Content:
 *Updated validation*
 
 No more than `MAX_REQUEST_BLOB_SIDECARS_ELECTRA` may be requested at a time.
+
+##### BeaconBlockHeadersByRoot v1
+
+**Protocol ID:** `/eth2/beacon_chain/req/beacon_block_headers_by_root/1/`
+
+*[New in EIPXXXX]*
+
+The `<context-bytes>` field is calculated as
+`context = compute_fork_digest(genesis_validators_root, epoch)`:
+
+Request Content:
+
+```
+(
+  List[Root, MAX_REQUEST_BLOCKS_DENEB]
+)
+```
+
+Response Content:
+
+```
+(
+  List[BeaconBlockHeader, MAX_REQUEST_BLOCKS_DENEB]
+)
+```
+
+Requests blocks by block root (= `hash_tree_root(BeaconBlockHeader)`).
+The response is a list of `BeaconBlockHeader` whose length is less than or equal
+to the number of requested blocks. It may be less in the case that the
+responding peer is missing blocks.
+
+No more than `MAX_REQUEST_BLOCKS_DENEB` may be requested at a time.
+
+The request MUST be encoded as an SSZ-field.
+
+The response MUST consist of zero or more `response_chunk`. Each _successful_
+`response_chunk` MUST contain a single `BeaconBlockHeader` payload.
+
+Clients MUST support requesting blocks since `max(GENESIS_EPOCH, current_epoch - MIN_EPOCHS_FOR_BLOCK_REQUESTS)`
+
+Clients MUST respond with at least one block, if they have it. Clients MAY limit
+the number of blocks in the response.
+
+Clients MAY include a block in the response as soon as it passes the gossip
+validation rules. Clients SHOULD NOT respond with blocks that fail the beacon
+chain state transition.
