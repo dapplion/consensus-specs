@@ -235,6 +235,7 @@ def weigh_justification_and_finalization(state: BeaconState,
             # The block `checkpoint.root` must point to an upstream block that is justified
             state.current_justified_checkpoint = checkpoint
             break
+# you cannot justified something uynless its l1 finalized, since there's still a risk that it will reorg
 
     # Process finalizations
     # Gasper paper: https://arxiv.org/pdf/2003.03052
@@ -260,6 +261,7 @@ def weigh_justification_and_finalization(state: BeaconState,
             cp for cp in state.justified_checkpoints
             if cp.epoch > finalized_checkpoint.epoch
         ]
+# This is not good, because the votes still exist, and people cannot change to another chain. Here we just ignoring reality by not aknowliedging the votes that exist
 ```
 
 
