@@ -476,6 +476,7 @@ The response MUST consist of zero or more `response_chunk`. Each _successful_
 
 Clients MUST support requesting sidecars since `minimum_request_epoch`, where
 `minimum_request_epoch = max(finalized_epoch, current_epoch - MIN_EPOCHS_FOR_DATA_COLUMN_SIDECARS_REQUESTS, FULU_FORK_EPOCH)`.
+Clients MAY support requesting sidecars of finalized blocks.
 If any root in the request content references a block earlier than
 `minimum_request_epoch`, peers MAY respond with error code
 `3: ResourceUnavailable` or not include the data column sidecar in the response.

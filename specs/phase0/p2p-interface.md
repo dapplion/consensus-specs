@@ -1100,15 +1100,13 @@ responding peer is missing blocks.
 
 No more than `MAX_REQUEST_BLOCKS` may be requested at a time.
 
-`BeaconBlocksByRoot` is primarily used to recover recent blocks (e.g. when
-receiving a block or attestation whose parent is unknown).
-
 The request MUST be encoded as an SSZ-field.
 
 The response MUST consist of zero or more `response_chunk`. Each _successful_
 `response_chunk` MUST contain a single `SignedBeaconBlock` payload.
 
 Clients MUST support requesting blocks since the latest finalized epoch.
+Clients MAY support requesting finalized blocks.
 
 Clients MUST respond with at least one block, if they have it. Clients MAY limit
 the number of blocks in the response.

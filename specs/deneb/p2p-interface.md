@@ -468,14 +468,12 @@ the expected KZG commitments through `verify_blob_kzg_proof`.
 
 No more than `MAX_REQUEST_BLOB_SIDECARS` may be requested at a time.
 
-`BlobSidecarsByRoot` is primarily used to recover recent blobs (e.g. when
-receiving a block with a transaction whose corresponding blob is missing).
-
 The response MUST consist of zero or more `response_chunk`. Each _successful_
 `response_chunk` MUST contain a single `BlobSidecar` payload.
 
 Clients MUST support requesting sidecars since `minimum_request_epoch`, where
 `minimum_request_epoch = max(finalized_epoch, current_epoch - MIN_EPOCHS_FOR_BLOB_SIDECARS_REQUESTS, DENEB_FORK_EPOCH)`.
+Clients MAY support requesting sidecars of finalized blocks.
 If any root in the request content references a block earlier than
 `minimum_request_epoch`, peers MAY respond with error code
 `3: ResourceUnavailable` or not include the blob sidecar in the response.
