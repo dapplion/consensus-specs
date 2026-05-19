@@ -545,8 +545,11 @@ def test_gossip_sync_committee_contribution_and_proof__reject_aggregator_not_in_
     # ≤ subcommittee_size validators (Gnosis preset: 128 validators, subcommittee
     # also 128) every validator is in the subcommittee — skip gracefully.
     outside_index = next(
-        (vi for vi in range(len(state.validators))
-         if state.validators[vi].pubkey not in subcommittee_pubkeys),
+        (
+            vi
+            for vi in range(len(state.validators))
+            if state.validators[vi].pubkey not in subcommittee_pubkeys
+        ),
         None,
     )
     if outside_index is None:
