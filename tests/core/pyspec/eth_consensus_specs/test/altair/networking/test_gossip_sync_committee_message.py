@@ -212,8 +212,16 @@ def test_gossip_sync_committee_message__reject_wrong_subnet(spec, state):
 
     yield "current_time_ms", "meta", int(current_time_ms)
 
-    # Use a wrong subnet_id
-    wrong_subnet_id = (correct_subnet_id + 1) % spec.SYNC_COMMITTEE_SUBNET_COUNT
+    # Use a wrong subnet_id. With small state sizes (Gnosis preset: 128
+    # validators across 512 sync committee positions) a validator can occupy
+    # every subnet, leaving no "wrong" subnet to pick — skip gracefully.
+    validator_subnets = set(spec.compute_subnets_for_sync_committee(state, validator_index))
+    wrong_subnet_id = next(
+        (s for s in range(spec.SYNC_COMMITTEE_SUBNET_COUNT) if s not in validator_subnets),
+        None,
+    )
+    if wrong_subnet_id is None:
+        return
 
     result, reason = run_validate_sync_committee_message_gossip(
         spec,

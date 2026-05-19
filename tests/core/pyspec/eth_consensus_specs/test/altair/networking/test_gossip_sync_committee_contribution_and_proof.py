@@ -541,11 +541,17 @@ def test_gossip_sync_committee_contribution_and_proof__reject_aggregator_not_in_
         subcommittee_pubkeys,
     )
 
-    # Find a validator NOT in this subcommittee
-    for vi in range(len(state.validators)):
-        if state.validators[vi].pubkey not in subcommittee_pubkeys:
-            signed_cap.message.aggregator_index = vi
-            break
+    # Find a validator NOT in this subcommittee. If the default test state has
+    # ≤ subcommittee_size validators (Gnosis preset: 128 validators, subcommittee
+    # also 128) every validator is in the subcommittee — skip gracefully.
+    outside_index = next(
+        (vi for vi in range(len(state.validators))
+         if state.validators[vi].pubkey not in subcommittee_pubkeys),
+        None,
+    )
+    if outside_index is None:
+        return
+    signed_cap.message.aggregator_index = outside_index
 
     yield get_filename(signed_cap), signed_cap
 
