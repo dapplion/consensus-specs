@@ -105,11 +105,22 @@ jobs:
           path: tests/${{ matrix.preset }}
           merge-multiple: true
 
+      - name: Resolve published preset name
+        id: name
+        run: |
+          # The "mainnet" preset in this fork carries Gnosis values, so publish it as "gnosis".
+          if [ "${{ matrix.preset }}" = "mainnet" ]; then
+            mv tests/mainnet tests/gnosis
+            echo "preset=gnosis" >> "$GITHUB_OUTPUT"
+          else
+            echo "preset=${{ matrix.preset }}" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Archive reference tests
-        run: tar -czvf ${{ matrix.preset }}.tar.gz tests/${{ matrix.preset }}
+        run: tar -czvf ${{ steps.name.outputs.preset }}.tar.gz tests/${{ steps.name.outputs.preset }}
 
       - name: Upload to release
-        run: gh release upload "${{ needs.setup.outputs.tag }}" ${{ matrix.preset }}.tar.gz
+        run: gh release upload "${{ needs.setup.outputs.tag }}" ${{ steps.name.outputs.preset }}.tar.gz
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
