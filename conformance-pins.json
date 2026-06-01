@@ -1,0 +1,31 @@
+{
+  "$comment": "Single source of truth for the Gnosis-preset client-conformance setup. Bump these deliberately. 'vectorVersion' is the gnosischain/consensus-specs release tag whose gnosis.tar.gz each client consumes; 'ref' is the branch/tag of each gnosischain client fork carrying the Gnosis spec-test wiring. A known skew exists: clients currently track spec ~v1.7.0-alpha.7/alpha.8 while the Gnosis vectors are alpha.4 — align by cutting a matching gnosischain/consensus-specs release.",
+  "vectorRepo": "gnosischain/consensus-specs",
+  "vectorVersion": "v1.7.0-alpha.4",
+  "clients": {
+    "lighthouse": {
+      "repo": "gnosischain/lighthouse",
+      "ref": "gnosis-spec-tests",
+      "command": "make test-ef-gnosis",
+      "vectorVersionPin": "GNOSIS_SPECS_TEST_VERSION (testing/ef_tests/Makefile)"
+    },
+    "nimbus": {
+      "repo": "gnosischain/nimbus-eth2",
+      "ref": "gnosis-spec-tests",
+      "command": "make test-gnosis",
+      "vectorVersionPin": "GNOSIS_SPECS_TEST_VERSION (scripts/setup_scenarios.sh)"
+    },
+    "teku": {
+      "repo": "gnosischain/teku",
+      "ref": "gnosis-spec-tests",
+      "command": "ENV_SPEC=gnosis ./gradlew :eth-reference-tests:referenceTest",
+      "vectorVersionPin": "gnosisRefTestVersion (build.gradle)"
+    },
+    "lodestar": {
+      "repo": "gnosischain/lodestar",
+      "ref": "gnosis-spec-tests",
+      "command": "pnpm test:spec:gnosis",
+      "vectorVersionPin": "gnosisConsensusSpecsTests.specVersion (spec-tests-version.json)"
+    }
+  }
+}
