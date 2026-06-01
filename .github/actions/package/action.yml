@@ -5,8 +5,16 @@ description: >-
 
 inputs:
   name:
-    description: Tarball name (without .tar.gz) and key used in artifact filtering.
+    description: Tarball name (without .tar.gz).
     required: true
+  artifact-name:
+    description: >-
+      Name used to filter the intermediate artifacts (`<artifact-prefix>-<artifact-name>-*`).
+      Defaults to `name`. Set this when the published tarball name differs from the name the
+      intermediate artifacts were generated under (e.g. Gnosis tests generated as `mainnet`
+      but published as `gnosis`).
+    required: false
+    default: ""
   artifact-prefix:
     description: Prefix for intermediate artifact names.
     required: true
@@ -23,7 +31,7 @@ runs:
     - name: Download intermediate artifacts
       uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
       with:
-        pattern: ${{ inputs.artifact-prefix }}-${{ inputs.name }}-*
+        pattern: ${{ inputs.artifact-prefix }}-${{ inputs.artifact-name != '' && inputs.artifact-name || inputs.name }}-*
         path: ${{ inputs.source-path }}
         merge-multiple: true
 
@@ -49,7 +57,7 @@ runs:
       run: |
         gh api repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts \
           --paginate --jq '.artifacts[]
-            | select(.name | startswith("${{ inputs.artifact-prefix }}-${{ inputs.name }}-"))
+            | select(.name | startswith("${{ inputs.artifact-prefix }}-${{ inputs.artifact-name != '' && inputs.artifact-name || inputs.name }}-"))
             | .id' | while read id; do
           gh api -X DELETE repos/${{ github.repository }}/actions/artifacts/$id
         done

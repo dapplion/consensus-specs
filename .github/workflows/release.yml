@@ -100,16 +100,27 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
+      # The "mainnet" preset in this fork carries Gnosis values, so publish it as "gnosis".
+      - name: Resolve published preset name
+        id: name
+        run: |
+          if [ "${{ matrix.preset }}" = "mainnet" ]; then
+            echo "preset=gnosis" >> "$GITHUB_OUTPUT"
+          else
+            echo "preset=${{ matrix.preset }}" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Package reference tests
         uses: ./.github/actions/package
         with:
-          name: ${{ matrix.preset }}
+          name: ${{ steps.name.outputs.preset }}
+          artifact-name: ${{ matrix.preset }}
           artifact-prefix: reftests
-          source-path: tests/${{ matrix.preset }}
+          source-path: tests/${{ steps.name.outputs.preset }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload to release
-        run: gh release upload "${{ needs.setup.outputs.tag }}" ${{ matrix.preset }}.tar.gz
+        run: gh release upload "${{ needs.setup.outputs.tag }}" ${{ steps.name.outputs.preset }}.tar.gz
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
