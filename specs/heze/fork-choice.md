@@ -181,7 +181,10 @@ specification.
 
 *Note*: Whether a payload satisfies the inclusion list constraints MUST NOT
 affect payload validation. A valid payload that fails to satisfy those
-constraints remains valid, but fork choice does not extend it.
+constraints remains valid. Fork choice reads the result only in
+`should_extend_payload`, so it does not extend the payload in the payload
+status tiebreak of the next slot. After that slot, weight decides between the
+`FULL` and `EMPTY` nodes as for any other payload.
 
 ```python
 def record_payload_inclusion_list_satisfaction(
