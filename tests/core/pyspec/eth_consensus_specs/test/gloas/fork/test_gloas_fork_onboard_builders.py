@@ -1097,11 +1097,11 @@ def test_fork_topups_to_non_latest_builders(spec, phases, state):
 @spec_test
 @with_state
 @with_meta_tags(GLOAS_FORK_TEST_META_TAGS)
-def test_fork_builder_deposit_at_onboarding_cutoff_stays_pending(spec, phases, state):
+def test_fork_builder_deposit_at_onboarding_cutoff_leaves_placeholder(spec, phases, state):
     """
-    Test a builder deposit included at the start of epoch ``fork - 2`` is not onboarded, because it
-    may have been applied before the fork on another branch, while a builder deposit one slot later
-    is onboarded.
+    Test a builder deposit included at the start of epoch ``fork - 2`` is onboarded and leaves a
+    zero-amount placeholder in the queue, because it may have been applied before the fork on
+    another branch, while a builder deposit one slot later is onboarded without a placeholder.
     """
     post_spec = phases[GLOAS]
     amount = post_spec.MIN_DEPOSIT_AMOUNT
@@ -1119,13 +1119,15 @@ def test_fork_builder_deposit_at_onboarding_cutoff_stays_pending(spec, phases, s
 
     post_state = yield from run_fork_test(post_spec, state)
 
-    # Only the deposit after the cutoff is onboarded
-    assert len(post_state.builders) == 1
-    assert post_state.builders[0].pubkey == builder_pubkeys[1]
+    # Both deposits are onboarded
+    assert [builder.pubkey for builder in post_state.builders] == builder_pubkeys[:2]
+    assert [builder.balance for builder in post_state.builders] == [amount, amount]
 
-    # The deposit at the cutoff stays pending, to be applied as a validator deposit
+    # Only the deposit at the cutoff leaves a zero-amount placeholder
+    placeholder = at_cutoff.copy()
+    placeholder.amount = post_spec.Gwei(0)
     assert len(post_state.pending_deposits) == 1
-    assert post_state.pending_deposits[0] == at_cutoff
+    assert post_state.pending_deposits[0] == placeholder
 
 
 def drain_pending_deposits(spec, state):
@@ -1160,6 +1162,7 @@ def fork_two_branches(spec, post_spec, state, applied_before_fork):
 @spec_test
 @with_state
 @with_meta_tags(GLOAS_FORK_TEST_META_TAGS)
+@always_bls
 def test_fork_validator_indices_match_across_branches(spec, phases, state):
     """
     Test a finalized builder deposit that one branch applied before the fork, and the other did
@@ -1183,5 +1186,61 @@ def test_fork_validator_indices_match_across_branches(spec, phases, state):
     pubkeys_y = [validator.pubkey for validator in post_y.validators]
     assert pubkeys_x == pubkeys_y
     assert pubkeys_x[num_validators:] == [builder_pubkeys[0], builder_pubkeys[1]]
+
+    # On branch y the depositor is a builder with the full amount
+    assert [builder.pubkey for builder in post_y.builders] == [builder_pubkeys[0]]
+    assert post_y.builders[0].balance == amount
+
+    # On branch y the validator at the same index is a zero-balance placeholder
+    placeholder = post_y.validators[num_validators]
+    assert placeholder.withdrawal_credentials == builder_deposit.withdrawal_credentials
+    assert placeholder.effective_balance == 0
+    assert post_y.balances[num_validators] == 0
+    assert placeholder.activation_eligibility_epoch == post_spec.FAR_FUTURE_EPOCH
+    assert not post_spec.is_eligible_for_activation_queue(placeholder)
+
+    # The placeholder never becomes eligible for activation
+    for _ in range(4):
+        post_spec.process_registry_updates(post_y)
+        post_spec.process_effective_balance_updates(post_y)
+    assert post_y.validators[num_validators].activation_eligibility_epoch == (
+        post_spec.FAR_FUTURE_EPOCH
+    )
+
+    yield "post", post_y
+
+
+@with_phases(phases=[FULU], other_phases=[GLOAS])
+@spec_test
+@with_state
+@with_meta_tags(GLOAS_FORK_TEST_META_TAGS)
+@always_bls
+def test_fork_validator_indices_match_across_branches_invalid_signature(spec, phases, state):
+    """
+    Test a finalized builder deposit with an invalid signature, that one branch skipped before the
+    fork and the other did not, creates neither a validator nor a builder on either branch.
+    """
+    post_spec = phases[GLOAS]
+    amount = post_spec.MIN_ACTIVATION_BALANCE
+    num_validators = len(state.validators)
+
+    builder_deposit = create_pending_deposit_for_builder(
+        post_spec, builder_pubkeys[0], amount, signed=False
+    )
+    builder_deposit.slot = spec.GENESIS_SLOT
+    validator_deposit = create_pending_deposit_for_unregistered_validator(
+        post_spec, builder_pubkeys[1], amount
+    )
+    state.pending_deposits = spec.PendingDeposits.of(builder_deposit, validator_deposit)
+
+    yield "pre", state
+    post_x, post_y = fork_two_branches(spec, post_spec, state, applied_before_fork=1)
+
+    pubkeys_x = [validator.pubkey for validator in post_x.validators]
+    pubkeys_y = [validator.pubkey for validator in post_y.validators]
+    assert pubkeys_x == pubkeys_y
+    assert pubkeys_x[num_validators:] == [builder_pubkeys[1]]
+    assert len(post_x.builders) == 0
+    assert len(post_y.builders) == 0
 
     yield "post", post_y

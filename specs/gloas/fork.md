@@ -65,10 +65,13 @@ topped up only via `BuilderDepositRequest`.
 During this pass:
 
 - Only deposits with builder withdrawal credentials can fund builders.
-- Only deposits included after the start of epoch `GLOAS_FORK_EPOCH - 2` can
-  fund builders. Earlier deposits may have been applied before the fork on
-  another branch, where they created validators, so they stay queued on every
-  branch to keep validator indices consistent across branches.
+- A deposit included at or before the start of epoch `GLOAS_FORK_EPOCH - 2` that
+  funds a new builder also leaves a zero-amount placeholder at its position in
+  the queue. Such a deposit may have been applied before the fork on another
+  branch, where it created a validator. The placeholder creates a validator with
+  the same public key at the same index, which keeps validator indices
+  consistent across branches. On a branch where the validator already exists,
+  the placeholder is a no-op top-up.
 - Other deposits stay queued, even if a builder uses the same public key.
 - A valid builder registration can use a validator's public key.
 
@@ -92,11 +95,6 @@ def onboard_builders_from_pending_deposits(state: BeaconState) -> None:
     for deposit in state.pending_deposits:
         # Only builder-credential deposits can fund builders at the fork.
         if not is_builder_withdrawal_credential(deposit.withdrawal_credentials):
-            pending_deposits.append(deposit)
-            continue
-
-        # Only deposits that no branch could have applied before the fork can fund builders.
-        if deposit.slot <= onboarding_cutoff_slot:
             pending_deposits.append(deposit)
             continue
 
@@ -127,6 +125,18 @@ def onboard_builders_from_pending_deposits(state: BeaconState) -> None:
                 deposit.amount,
                 deposit.slot,
             )
+            # Another branch may have applied this deposit before the fork, creating a validator.
+            # Leave a placeholder that creates the same validator at the same index on this branch.
+            if deposit.slot <= onboarding_cutoff_slot:
+                pending_deposits.append(
+                    PendingDeposit(
+                        pubkey=deposit.pubkey,
+                        withdrawal_credentials=deposit.withdrawal_credentials,
+                        amount=Gwei(0),
+                        signature=deposit.signature,
+                        slot=deposit.slot,
+                    )
+                )
         else:
             builder_index = BuilderIndex(builder_pubkeys.index(deposit.pubkey))
             state.builders[builder_index].balance += deposit.amount

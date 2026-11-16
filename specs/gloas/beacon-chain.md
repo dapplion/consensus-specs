@@ -121,6 +121,7 @@
   - [Epoch processing](#epoch-processing)
     - [Modified `process_epoch`](#modified-process_epoch)
     - [Modified `process_pending_deposits`](#modified-process_pending_deposits)
+    - [Modified `apply_pending_deposit`](#modified-apply_pending_deposit)
     - [New `process_builder_pending_payments`](#new-process_builder_pending_payments)
     - [New `process_ptc_window`](#new-process_ptc_window)
   - [Block processing](#block-processing)
@@ -1711,6 +1712,39 @@ def process_pending_deposits(state: BeaconState) -> None:
         state.deposit_balance_to_consume = available_for_processing - processed_amount
     else:
         state.deposit_balance_to_consume = Gwei(0)
+```
+
+#### Modified `apply_pending_deposit`
+
+*Note*: The function `apply_pending_deposit` is modified in Gloas to create a
+validator without signature verification when a pending deposit for a new public
+key has a zero amount. Such a deposit is a placeholder left by
+`onboard_builders_from_pending_deposits`, which verified its signature at the
+fork. No other path queues a zero-amount pending deposit for a new public key:
+deposit requests carry at least `MIN_DEPOSIT_AMOUNT`, and the other pending
+deposits that the protocol creates (legacy Eth1 deposits, excess balance of
+compounding validators, pre-activation balances at the Electra fork) are for
+existing validators. A zero-amount deposit consumes no churn in
+`process_pending_deposits`.
+
+```python
+def apply_pending_deposit(state: BeaconState, deposit: PendingDeposit) -> None:
+    """
+    Applies ``deposit`` to the ``state``.
+    """
+    validator_pubkeys = [validator.pubkey for validator in state.validators]
+    if deposit.pubkey not in validator_pubkeys:
+        # [Modified in Gloas:EIP7732]
+        # A zero-amount deposit is a placeholder whose signature was verified at the fork
+        if deposit.amount == 0 or is_valid_deposit_signature(
+            deposit.pubkey, deposit.withdrawal_credentials, deposit.amount, deposit.signature
+        ):
+            add_validator_to_registry(
+                state, deposit.pubkey, deposit.withdrawal_credentials, deposit.amount
+            )
+    else:
+        validator_index = ValidatorIndex(validator_pubkeys.index(deposit.pubkey))
+        increase_balance(state, validator_index, deposit.amount)
 ```
 
 #### New `process_builder_pending_payments`
