@@ -8,6 +8,8 @@
 - [Configs](#configs)
 - [Helpers](#helpers)
   - [New `initialize_ptc_window`](#new-initialize_ptc_window)
+  - [New `is_pending_builder_validator`](#new-is_pending_builder_validator)
+  - [New `onboard_builders_from_pending_validators`](#new-onboard_builders_from_pending_validators)
   - [New `onboard_builders_from_pending_deposits`](#new-onboard_builders_from_pending_deposits)
 - [Fork to Gloas](#fork-to-gloas)
   - [Fork trigger](#fork-trigger)
@@ -56,6 +58,66 @@ def initialize_ptc_window(
     return PayloadTimelinessCommitteeWindow(data=empty_previous_epoch + ptcs)
 ```
 
+### New `is_pending_builder_validator`
+
+```python
+def is_pending_builder_validator(validator: Validator) -> bool:
+    """
+    Check if ``validator`` was created by a deposit with builder withdrawal credentials and has
+    not been activated. Such a validator cannot be slashed or exited, since both require it to be
+    active.
+    """
+    return (
+        is_builder_withdrawal_credential(validator.withdrawal_credentials)
+        and validator.activation_epoch == FAR_FUTURE_EPOCH
+    )
+```
+
+### New `onboard_builders_from_pending_validators`
+
+*Note*: Builder deposits included up to the start of epoch
+`GLOAS_FORK_EPOCH - 2` are not onboarded from the pending deposit queue, because
+some branch may have applied them before the fork. On such a branch the deposit
+created a validator that is not activated yet. This pass moves the whole balance
+of every such validator to a new builder with the same public key. The validator
+keeps its index, so validator indices stay consistent across branches. Its
+balance and effective balance are set to zero and its
+`activation_eligibility_epoch` is reset to `FAR_FUTURE_EPOCH`, so it is never
+activated: `is_eligible_for_activation` does not check the balance, and
+`is_eligible_for_activation_queue` requires an effective balance of at least
+`MIN_ACTIVATION_BALANCE`. The builder's `deposit_epoch` is the fork epoch, so
+the builder becomes active only once the fork epoch is finalized.
+
+*Note*: This pass runs before `onboard_builders_from_pending_deposits`, because
+the deposits of these validators were applied before any deposit still in the
+queue. Builder indices therefore follow deposit order, and a queued builder
+deposit for the same public key tops up the new builder.
+
+```python
+def onboard_builders_from_pending_validators(state: BeaconState) -> None:
+    """
+    Moves the balance of every pending validator with builder withdrawal
+    credentials to a builder with the same public key.
+    """
+    for index, validator in enumerate(state.validators):
+        if not is_pending_builder_validator(validator):
+            continue
+
+        # Validator public keys are unique and this pass runs on an empty
+        # builder registry, so every converted validator gets a new builder.
+        add_builder_to_registry(
+            state,
+            validator.pubkey,
+            PAYLOAD_BUILDER_VERSION,
+            ExecutionAddress(validator.withdrawal_credentials[12:]),
+            state.balances[index],
+            state.slot,
+        )
+        state.balances[index] = Gwei(0)
+        validator.effective_balance = Gwei(0)
+        validator.activation_eligibility_epoch = FAR_FUTURE_EPOCH
+```
+
 ### New `onboard_builders_from_pending_deposits`
 
 *Note*: This one-time onboarding is the only path through the validator deposit
@@ -69,6 +131,9 @@ During this pass:
   fund builders. Earlier deposits may have been applied before the fork on
   another branch, where they created validators, so they stay queued on every
   branch to keep validator indices consistent across branches.
+- The cutoff does not apply to a deposit for the public key of a validator that
+  `onboard_builders_from_pending_validators` converted. That deposit is a top-up
+  on every branch, so it funds the builder instead of the converted validator.
 - Other deposits stay queued, even if a builder uses the same public key.
 - A valid builder registration can use a validator's public key.
 
@@ -83,6 +148,11 @@ def onboard_builders_from_pending_deposits(state: BeaconState) -> None:
     onboarding builders at the fork.
     """
     validator_pubkeys = [validator.pubkey for validator in state.validators]
+    converted_pubkeys = [
+        validator.pubkey
+        for validator in state.validators
+        if is_pending_builder_validator(validator)
+    ]
     # Deposits up to this slot may have been applied before the fork on another branch
     onboarding_cutoff_slot = compute_start_slot_at_epoch(
         Epoch(max(int(get_current_epoch(state)), 2) - 2)
@@ -95,8 +165,9 @@ def onboard_builders_from_pending_deposits(state: BeaconState) -> None:
             pending_deposits.append(deposit)
             continue
 
-        # Only deposits that no branch could have applied before the fork can fund builders.
-        if deposit.slot <= onboarding_cutoff_slot:
+        # Only deposits that no branch could have applied before the fork can fund builders,
+        # except top-ups for converted validators, which no branch applies as a new validator.
+        if deposit.slot <= onboarding_cutoff_slot and deposit.pubkey not in converted_pubkeys:
             pending_deposits.append(deposit)
             continue
 
@@ -246,6 +317,8 @@ def upgrade_to_gloas(pre: fulu.BeaconState) -> BeaconState:
     # [New in Gloas:EIP7732]
     post.ptc_window = initialize_ptc_window(post)
 
+    # [New in Gloas:EIP7732]
+    onboard_builders_from_pending_validators(post)
     # [New in Gloas:EIP7732]
     onboard_builders_from_pending_deposits(post)
 

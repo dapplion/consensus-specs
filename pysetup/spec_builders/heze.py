@@ -73,7 +73,9 @@ EXECUTION_ENGINE = NoopExecutionEngine()"""
         return {
             "initialize_ptc_window",
             "is_candidate_block",
+            "is_pending_builder_validator",
             "onboard_builders_from_pending_deposits",
+            "onboard_builders_from_pending_validators",
             "process_eth1_data",
             "process_eth1_data_reset",
             "upgrade_to_gloas",

@@ -1185,3 +1185,123 @@ def test_fork_validator_indices_match_across_branches(spec, phases, state):
     assert pubkeys_x[num_validators:] == [builder_pubkeys[0], builder_pubkeys[1]]
 
     yield "post", post_y
+
+
+def assert_converted_validator(spec, state, validator_index):
+    """Assert a pending builder validator was emptied and can never be activated."""
+    validator = state.validators[validator_index]
+    assert state.balances[validator_index] == 0
+    assert validator.effective_balance == 0
+    assert validator.activation_eligibility_epoch == spec.FAR_FUTURE_EPOCH
+    assert validator.activation_epoch == spec.FAR_FUTURE_EPOCH
+
+
+def get_builder_by_pubkey(state, pubkey):
+    builders = [builder for builder in state.builders if builder.pubkey == pubkey]
+    assert len(builders) == 1
+    return builders[0]
+
+
+@with_phases(phases=[FULU], other_phases=[GLOAS])
+@spec_test
+@with_state
+@with_meta_tags(GLOAS_FORK_TEST_META_TAGS)
+def test_fork_pending_builder_validator_converted_on_applied_branch(spec, phases, state):
+    """
+    Test the branch that applied a finalized builder deposit before the fork converts the
+    resulting pending validator into a builder holding its balance, while validator indices still
+    match the branch that did not apply it.
+    """
+    post_spec = phases[GLOAS]
+    amount = post_spec.MIN_ACTIVATION_BALANCE
+    num_validators = len(state.validators)
+
+    builder_deposit = create_pending_deposit_for_builder(post_spec, builder_pubkeys[0], amount)
+    builder_deposit.slot = spec.GENESIS_SLOT
+    state.pending_deposits = spec.PendingDeposits.of(builder_deposit)
+
+    yield "pre", state
+    post_x, post_y = fork_two_branches(spec, post_spec, state, applied_before_fork=1)
+
+    assert [v.pubkey for v in post_x.validators] == [v.pubkey for v in post_y.validators]
+    assert post_x.validators[num_validators].pubkey == builder_pubkeys[0]
+
+    # Branch x: the pubkey is a builder holding the balance, the validator is emptied
+    assert_converted_validator(post_spec, post_x, num_validators)
+    builder = get_builder_by_pubkey(post_x, builder_pubkeys[0])
+    assert builder.balance == amount
+    assert builder.deposit_epoch == post_spec.get_current_epoch(post_x)
+    assert builder.execution_address == builder_deposit.withdrawal_credentials[12:]
+
+    # The emptied validator never re-enters the activation queue nor activates
+    post_x.finalized_checkpoint.epoch = post_spec.get_current_epoch(post_x) + 1
+    post_spec.process_registry_updates(post_x)
+    assert_converted_validator(post_spec, post_x, num_validators)
+
+    yield "post", post_x
+
+
+@with_phases(phases=[FULU], other_phases=[GLOAS])
+@spec_test
+@with_state
+@with_meta_tags(GLOAS_FORK_TEST_META_TAGS)
+def test_fork_active_builder_credential_validator_not_converted(spec, phases, state):
+    """
+    Test an already active validator with builder withdrawal credentials is not converted.
+    """
+    post_spec = phases[GLOAS]
+    validator_index = 0
+    state.validators[validator_index].withdrawal_credentials = get_builder_withdrawal_credentials(
+        post_spec, state.validators[validator_index].pubkey
+    )
+    balance = state.balances[validator_index]
+    effective_balance = state.validators[validator_index].effective_balance
+    state.pending_deposits = spec.PendingDeposits()
+
+    post_state = yield from run_fork_test(post_spec, state)
+
+    assert len(post_state.builders) == 0
+    assert post_state.balances[validator_index] == balance
+    assert post_state.validators[validator_index].effective_balance == effective_balance
+    assert post_state.validators[validator_index] == state.validators[validator_index]
+
+
+@with_phases(phases=[FULU], other_phases=[GLOAS])
+@spec_test
+@with_state
+@with_meta_tags(GLOAS_FORK_TEST_META_TAGS)
+def test_fork_pending_builder_validator_merged_with_queued_builder_deposits(spec, phases, state):
+    """
+    Test a pending builder validator is converted into a builder that then receives the queued
+    builder deposits for the same pubkey, both before and after the onboarding cutoff, while a
+    queued deposit for that pubkey with other credentials stays pending.
+    """
+    post_spec = phases[GLOAS]
+    amount = post_spec.MIN_ACTIVATION_BALANCE
+    topup_amount = post_spec.MIN_DEPOSIT_AMOUNT
+    pubkey = builder_pubkeys[0]
+    validator_index = len(state.validators)
+
+    applied = create_pending_deposit_for_builder(post_spec, pubkey, amount)
+    applied.slot = spec.GENESIS_SLOT
+    spec.apply_pending_deposit(state, applied)
+    assert state.validators[validator_index].pubkey == pubkey
+
+    before_cutoff = create_pending_deposit_for_builder(post_spec, pubkey, topup_amount)
+    before_cutoff.slot = spec.GENESIS_SLOT
+    after_cutoff = create_pending_deposit_for_builder(post_spec, pubkey, topup_amount)
+    other_credentials = create_pending_deposit_for_unregistered_validator(
+        post_spec, pubkey, topup_amount
+    )
+    state.pending_deposits = spec.PendingDeposits.of(before_cutoff, after_cutoff, other_credentials)
+
+    post_state = yield from run_fork_test(post_spec, state)
+
+    assert_converted_validator(post_spec, post_state, validator_index)
+    assert len(post_state.builders) == 1
+    builder = post_state.builders[0]
+    assert builder.pubkey == pubkey
+    assert builder.balance == amount + 2 * topup_amount
+    assert builder.deposit_epoch == post_spec.get_current_epoch(post_state)
+
+    assert list(post_state.pending_deposits) == [other_credentials]
