@@ -61,6 +61,12 @@ Such a deposit signs over `DepositMessage` under `DOMAIN_DEPOSIT`, with
 withdrawal credentials of the form
 `BUILDER_WITHDRAWAL_PREFIX + b"\x00" * 11 + execution_address`.
 
+*Note*: A deposit to the validator deposit contract with a
+`BUILDER_WITHDRAWAL_PREFIX` withdrawal credential that is not onboarded as a
+builder at the fork creates a validator, not a builder. Such a validator is
+treated like a validator with `ETH1_ADDRESS_WITHDRAWAL_PREFIX` credentials for
+the same execution address (see the modified `has_eth1_withdrawal_credential`).
+
 ### Process deposit
 
 A builder deposit request for a new pubkey registers a builder. A request for an

@@ -9,6 +9,7 @@ from eth_consensus_specs.test.helpers.withdrawals import (
     assert_process_withdrawals,
     check_is_partially_withdrawable_validator,
     prepare_process_withdrawals,
+    set_builder_withdrawal_credential,
     set_parent_block_empty,
 )
 
@@ -1657,4 +1658,69 @@ def test_builder_sweep_after_pending_withdrawal(spec, state):
         withdrawal_count=2,
         builder_balances={builder_index: 0},
         builder_pending_delta=-1,
+    )
+
+
+@with_gloas_and_later
+@spec_state_test
+def test_validator_with_builder_credentials_full_withdrawal(spec, state):
+    """
+    A validator with builder (0xB0) withdrawal credentials is fully withdrawn
+    to its execution address once withdrawable.
+    """
+    validator_index = 0
+    address = b"\x5b" * 20
+    set_builder_withdrawal_credential(spec, state, validator_index, address=address)
+
+    prepare_process_withdrawals(
+        spec,
+        state,
+        full_withdrawal_indices=[validator_index],
+    )
+
+    pre_state = state.copy()
+    yield from run_gloas_withdrawals_processing(spec, state)
+    assert_process_withdrawals(
+        spec,
+        state,
+        pre_state,
+        withdrawal_count=1,
+        balances={validator_index: 0},
+        withdrawal_amounts={validator_index: pre_state.balances[validator_index]},
+        withdrawal_addresses={validator_index: address},
+        withdrawal_index_delta=1,
+    )
+
+
+@with_gloas_and_later
+@spec_state_test
+def test_validator_with_builder_credentials_partial_withdrawal(spec, state):
+    """
+    A validator with builder (0xB0) withdrawal credentials has its balance in
+    excess of MIN_ACTIVATION_BALANCE withdrawn to its execution address.
+    """
+    validator_index = 0
+    address = b"\x5b" * 20
+    excess_balance = spec.Gwei(1_000_000_000)
+    set_builder_withdrawal_credential(spec, state, validator_index, address=address)
+    validator = state.validators[validator_index]
+    validator.effective_balance = spec.MIN_ACTIVATION_BALANCE
+    state.balances[validator_index] = spec.MIN_ACTIVATION_BALANCE + excess_balance
+
+    prepare_process_withdrawals(spec, state)
+
+    assert spec.get_max_effective_balance(validator) == spec.MIN_ACTIVATION_BALANCE
+    assert check_is_partially_withdrawable_validator(spec, state, validator_index)
+
+    pre_state = state.copy()
+    yield from run_gloas_withdrawals_processing(spec, state)
+    assert_process_withdrawals(
+        spec,
+        state,
+        pre_state,
+        withdrawal_count=1,
+        balances={validator_index: spec.MIN_ACTIVATION_BALANCE},
+        withdrawal_amounts={validator_index: excess_balance},
+        withdrawal_addresses={validator_index: address},
+        withdrawal_index_delta=1,
     )

@@ -89,6 +89,7 @@
     - [New `is_builder_index`](#new-is_builder_index)
     - [New `is_active_builder`](#new-is_active_builder)
     - [New `is_builder_withdrawal_credential`](#new-is_builder_withdrawal_credential)
+    - [Modified `has_eth1_withdrawal_credential`](#modified-has_eth1_withdrawal_credential)
     - [New `is_attestation_same_slot`](#new-is_attestation_same_slot)
     - [New `is_valid_indexed_payload_attestation`](#new-is_valid_indexed_payload_attestation)
     - [New `is_pending_validator`](#new-is_pending_validator)
@@ -1069,6 +1070,34 @@ def is_active_builder(state: BeaconState, builder_index: BuilderIndex) -> bool:
 ```python
 def is_builder_withdrawal_credential(withdrawal_credentials: Bytes32) -> bool:
     return withdrawal_credentials[:1] == BUILDER_WITHDRAWAL_PREFIX
+```
+
+#### Modified `has_eth1_withdrawal_credential`
+
+*Note*: A validator can have builder withdrawal credentials. This happens when a
+deposit with `BUILDER_WITHDRAWAL_PREFIX` is sent to the validator deposit
+contract and is not onboarded as a builder at the fork (see
+`onboard_builders_from_pending_deposits`), or is processed before the fork, or
+is sent after the fork. Builder withdrawal credentials have the same layout as
+0x01 credentials
+(`BUILDER_WITHDRAWAL_PREFIX + b"\x00" * 11 + execution_address`), so such a
+validator is treated like a 0x01 validator. It can be withdrawn by the sweep,
+can submit withdrawal and consolidation requests from its execution address, can
+switch to compounding credentials, and has a max effective balance of
+`MIN_ACTIVATION_BALANCE`. This function only applies to validators. Builders in
+`state.builders` are not affected.
+
+```python
+def has_eth1_withdrawal_credential(validator: Validator) -> bool:
+    """
+    Check if ``validator`` has an 0x01 prefixed "eth1" withdrawal credential
+    or an 0xB0 prefixed builder withdrawal credential.
+    """
+    return (
+        validator.withdrawal_credentials[:1] == ETH1_ADDRESS_WITHDRAWAL_PREFIX
+        # [New in Gloas:EIP7732]
+        or is_builder_withdrawal_credential(validator.withdrawal_credentials)
+    )
 ```
 
 #### New `is_attestation_same_slot`
